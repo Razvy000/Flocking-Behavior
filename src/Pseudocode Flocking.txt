@@ -1,0 +1,225 @@
+class Agent{
+
+	Vector x			// position vector2 or vector3
+	Vector rot			// rotation vector or quaternion
+	Vector v			// velocity
+	Vector a			// acceleration
+	World world			// world reference
+	
+	void update(float t){
+	
+		a = combine()
+		truncate(a, maxA)
+		
+		// Euler forward integration
+		
+		v = v + a * t
+		truncate(v, maxV)
+		
+		x = x + v * t
+	}
+	
+	void render(){
+		draw agent bird at position x with rotation rot
+	}
+	
+	Vector cohesion(){
+		// cohesion behavior
+		// return a vector that will steer our curent velocity
+		// towards the center of mass of all nearby neighbors
+		
+		Vector r = new Vector(0,0,0)
+		int countAgents = 0
+		
+		// get all my nearby neighbors inside radius Rc of this current agent
+		neighs = world.getNeighbors(this, Rc)
+		
+		// no neighbors means no cohesion desire
+		if neighs.length == 0
+			return r
+			
+		// find the center of mass of all neighbors
+		foreach agent in neighs{
+			if(isInFieldOfView(agent.x)){
+				r += agent.x
+				countAgents++
+			}
+			
+		}
+		if(countAgents == 0)
+			return r
+			
+		r /= countAgents
+		
+		// a vector from our position x towards the COM r
+		r = r - this.x
+		
+		// make r have length =1
+		normalize(r)
+		
+		return r
+	}
+	
+	
+	
+	Vector separation(){
+		// separation behavior
+		// steer in the opposite direction from each of our nearby neigbhors
+		
+		Vector r = new Vector(0,0,0)
+		
+		// get all my neighbors
+		neighs = world.getNeighbors(this, Rs)
+		
+		// no neighbors no separation desire
+		if neighs.length == 0
+			return r
+			
+		// add the contribution of each neighbor towards me
+		foreach agent in neighs{
+		
+			if(isInFieldOfView(agent.x)){
+				Vector towardsMe = this.x - agent.x
+				
+				if(magnitude(towardsMe) != 0){
+					
+					// force contribution will vary inversly proportional 
+					// to distance or even the square of the distance
+					
+					r += normalized(towardsMe) / magnitude(towardsMe) / magnitude(towardsMe)
+				}
+			}
+		}
+		
+		normalize(r)
+		
+		return r
+	}
+	
+	Vector alignment(){
+		// alignment behavior
+		// steer agent to match the direction and speed of neighbors
+		
+		Vector r = new Vector(0,0,0)
+		
+		// get all neigbhors
+		var neighs = world.getNeighbors(this, conf.Ra)
+		
+		// no neighbors means no one to align to
+		if neighs.length == 0
+			return r
+			
+		// match direction and speed == match velocity
+		// do this for all neighbors
+		foreach(var agent in neighs)
+			if(isInFieldOfView(agent.x))
+				r += agent.v
+		
+		normalize(r)
+		
+		return r
+	}
+	
+	
+	
+	Vector combine(){
+		// combine behaviors in different proportions
+		// return our acceleration
+		
+		Vector r
+		
+		// cohesion desire normalized
+		Vector cohere = cohesion()
+		
+		// separation desire normalized
+		Vector separate = separation()
+		
+		// alignment desire normalized
+		Vector align = alignment()
+		
+		// combine all desires
+		// weighted sum
+		r = Kc * cohere + Ks * separate + Ka * align + Kw * wander()
+		
+		// return acceleration
+		return r
+	}
+	
+	boolean isInFieldOfView(Vector stuff){
+		// is the stuff inside my field of view?
+	
+		boolean r = angle(this.v, stuff - this.x) <= conf.MaxFieldOfViewAngle
+		return r
+	}
+	
+	Vector3 wanderTarget
+	
+	Vector3 wander(){
+		// wander steer behavior that looks purposeful
+		
+		float jitter = conf.WanderJitter * t
+	
+		// add a small random vector to the target's position
+		wanderTarget += new Vector(RandomBinomial() * jitter, 0, RandomBinomial()*jitter)
+		
+		// reproject the vector back to unit circle
+		wanderTarget = normalize(wanderTarget)
+		
+		// increase length to be the same as the radius of the wander circle
+		wanderTarget *= conf.WanderRadius
+		
+		// position the target in front of the agent
+		Vector target = wanderTarget + new Vector(0, 0, conf.WanderDistance)
+		
+		// project the target from local space to world space
+		Vector targetInWorld = LocalToWorldTransformPoint(agent, target)
+		
+		// steer towards it
+		targetInWorld -= this.x
+		
+		targetInWorld = normalize(targetInWorld)
+		
+		return targetInWorld
+	}
+	
+}
+
+class World{
+
+	List<Agent> agents
+	
+	void init(int n)
+	void update(float t)
+	
+	
+	
+	List<Agent> getNeighbors(Agent agent, float radius){
+		// neighbors of agent inside radius
+		
+		List<Agent> r = new List<Agent>()
+		
+		foreach otherAgent in agents{
+		
+			if(otherAgent != agent &&  distance(agent.x, otherAgent.x) < radius)
+				r.add(otherAgent)
+		}
+		
+		return r
+	}
+	
+}
+
+class AgentConfig{
+
+	float maxV		// maximum velocity
+	float maxA
+	
+	float Rc, Rs, Ra
+	float Kc, Ks, Ka, Kw
+	
+	float MaxFieldOfViewAngle = 180
+	
+	float WanderRadius
+	float WanderJitter
+	float WanderDistance
+}
